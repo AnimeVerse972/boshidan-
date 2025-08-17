@@ -5,6 +5,7 @@ from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramForbiddenError
+from aiogram.client.default import DefaultBotProperties
 from dotenv import load_dotenv
 from keep_alive import keep_alive
 from database import add_user, get_channels, add_channel, delete_channel
