@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
 from datetime import datetime
-import keep_alive from keep_alive
+from keep_alive import keep_alive
 
 keep_alive() 
 load_dotenv()
