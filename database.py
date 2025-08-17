@@ -1,52 +1,72 @@
-from sqlalchemy import Column, Integer, String, DateTime, create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-from datetime import datetime
 import os
+from datetime import datetime
+from sqlalchemy import (
+    Column, Integer, String, BigInteger, DateTime, select, delete
+)
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import declarative_base, sessionmaker
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///bot.db")
+# === DATABASE URL ===
+DATABASE_URL = os.getenv("DATABASE_URL")  # misol: postgres://user:pass@host:port/dbname
 
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+# === SQLAlchemy asosiy setup ===
 Base = declarative_base()
+engine = create_async_engine(DATABASE_URL, echo=False)
+async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+
+# === MODELLAR ===
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(BigInteger, unique=True, nullable=False)
+    first_name = Column(String, nullable=True)
+    username = Column(String, nullable=True)
+    joined_at = Column(DateTime, default=datetime.utcnow)
 
 
 class Channel(Base):
     __tablename__ = "channels"
+
     id = Column(Integer, primary_key=True, index=True)
-    type = Column(String, nullable=False)  # "main" yoki "mandatory"
-    channel_id = Column(String, nullable=False)  # -100xxxx
-    invite_link = Column(String, nullable=True)  # https://t.me/+xxxx
+    type = Column(String, nullable=False)  # "mandatory" yoki "main"
+    channel_id = Column(BigInteger, unique=True, nullable=False)  # obuna tekshirish uchun
+    invite_link = Column(String, nullable=False)  # foydalanuvchilar uchun
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
-Base.metadata.create_all(bind=engine)
+# === FUNKSIYALAR ===
+
+# Jadval yaratish
+async def init_db():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
 
-def add_channel(channel_type: str, channel_id: str, invite_link: str = None):
-    db = SessionLocal()
-    channel = Channel(type=channel_type, channel_id=channel_id, invite_link=invite_link)
-    db.add(channel)
-    db.commit()
-    db.refresh(channel)
-    db.close()
-    return channel
+# === CHANNEL FUNKSIYALARI ===
+
+# Kanal qo‘shish
+async def add_channel(type_: str, channel_id: int, invite_link: str):
+    async with async_session() as session:
+        channel = Channel(type=type_, channel_id=channel_id, invite_link=invite_link)
+        session.add(channel)
+        await session.commit()
 
 
-def delete_channel(channel_id: int):
-    db = SessionLocal()
-    channel = db.query(Channel).filter(Channel.id == channel_id).first()
-    if channel:
-        db.delete(channel)
-        db.commit()
-    db.close()
+# Kanalni o‘chirish
+async def delete_channel(channel_id: int):
+    async with async_session() as session:
+        await session.execute(delete(Channel).where(Channel.channel_id == channel_id))
+        await session.commit()
 
 
-def get_channels(channel_type: str = None):
-    db = SessionLocal()
-    if channel_type:
-        channels = db.query(Channel).filter(Channel.type == channel_type).all()
-    else:
-        channels = db.query(Channel).all()
-    db.close()
-    return channels
+# Barcha kanallarni olish
+async def get_channels(type_: str = None):
+    async with async_session() as session:
+        if type_:
+            result = await session.execute(select(Channel).where(Channel.type == type_))
+        else:
+            result = await session.execute(select(Channel))
+        return result.scalars().all()
