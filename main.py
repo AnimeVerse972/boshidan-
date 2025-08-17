@@ -2,24 +2,29 @@ import asyncio
 import os
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import (
+    ReplyKeyboardMarkup, KeyboardButton,
+    InlineKeyboardMarkup, InlineKeyboardButton
+)
 from dotenv import load_dotenv
 from keep_alive import keep_alive
 from database import (
     get_user_by_tg_id, add_user,
-    add_required_channel, get_required_channels,
-    add_main_channel, get_main_channels
+    get_required_channels, get_main_channels
 )
 
+# === Boshlang'ich sozlash ===
 keep_alive()
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = os.getenv("ADMIN_ID")
+
 bot = Bot(token=BOT_TOKEN, parse_mode="HTML")
 dp = Dispatcher()
 
 
-# ✅ Foydalanuvchi obunasini tekshirish
+# === Foydalanuvchini obuna bo‘lganini tekshirish ===
 async def check_subscriptions(user_id: int):
     channels = get_required_channels()
     not_subscribed = []
@@ -35,6 +40,7 @@ async def check_subscriptions(user_id: int):
     return not_subscribed
 
 
+# === Asosiy komandalar ===
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     tg_id = str(message.from_user.id)
@@ -57,31 +63,124 @@ async def cmd_start(message: types.Message):
 
 @dp.message(Command("help"))
 async def cmd_help(message: types.Message):
-    await message.answer("/start - boshlash\n/help - yordam")
+    await message.answer("/start - boshlash\n/help - yordam\n/admin - admin panel (faqat admin)")
 
 
-# ✅ Admin komandasi: asosiy kanallarga xabar yuborish
-@dp.message(Command("send_all"))
-async def cmd_send_all(message: types.Message):
-    if str(message.from_user.id) != os.getenv("ADMIN_ID"):  # faqat admin ishlatsin
+# === Admin panel ===
+admin_kb = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="📊 Statistika")],
+        [KeyboardButton(text="📢 Kanallar")],
+    ],
+    resize_keyboard=True
+)
+
+
+@dp.message(Command("admin"))
+async def cmd_admin(message: types.Message):
+    if str(message.from_user.id) != str(ADMIN_ID):
         return await message.answer("❌ Siz admin emassiz!")
-
-    text = message.text.replace("/send_all", "").strip()
-    if not text:
-        return await message.answer("Matn yuboring: /send_all Salom!")
-
-    channels = get_main_channels()
-    for ch in channels:
-        try:
-            await bot.send_message(ch.channel_id, text)
-        except Exception as e:
-            await message.answer(f"Xato: {e}")
-
-    await message.answer("✅ Xabar barcha asosiy kanallarga yuborildi!")
+    await message.answer("🔐 Admin panel:", reply_markup=admin_kb)
 
 
+# === Kanallar menyusi ===
+@dp.message(lambda m: m.text == "📢 Kanallar")
+async def show_channel_types(message: types.Message):
+    if str(message.from_user.id) != str(ADMIN_ID):
+        return
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📢 Asosiy kanallar", callback_data="show_main_channels")],
+            [InlineKeyboardButton(text="🔒 Majburiy obuna kanallari", callback_data="show_required_channels")]
+        ]
+    )
+    await message.answer("Qaysi turdagi kanallarni ko‘rmoqchisiz?", reply_markup=kb)
+
+
+# === Inline tugmalar: Qo‘shish / O‘chirish / Ro‘yxat ===
+def channel_actions_kb(channel_type: str):
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="➕ Qo‘shish", callback_data=f"{channel_type}_add")],
+            [InlineKeyboardButton(text="❌ O‘chirish", callback_data=f"{channel_type}_delete")],
+            [InlineKeyboardButton(text="📃 Ro‘yxat", callback_data=f"{channel_type}_list")],
+        ]
+    )
+
+
+@dp.callback_query(lambda c: c.data in ["show_main_channels", "show_required_channels"])
+async def process_channel_type(callback: types.CallbackQuery):
+    if str(callback.from_user.id) != str(ADMIN_ID):
+        return await callback.answer("Siz admin emassiz!", show_alert=True)
+
+    if callback.data == "show_main_channels":
+        await bot.send_sticker(
+            chat_id=callback.message.chat.id,
+            sticker="CAACAgIAAxkBAAEIu4Bn7l1Uu1zyH6R0Lmi5y0R2R7r0YAACsQADVp29CjepXdmDpdXzNAQ"
+        )
+        await callback.message.answer(
+            "📢 <b>Asosiy kanallar</b> bo‘limi.\n"
+            "➕ Qo‘shish — yangi asosiy kanal qo‘shasiz\n"
+            "❌ O‘chirish — mavjud kanalni o‘chirasiz\n"
+            "📃 Ro‘yxat — barcha asosiy kanallarni ko‘rasiz",
+            reply_markup=channel_actions_kb("main")
+        )
+
+    elif callback.data == "show_required_channels":
+        await bot.send_sticker(
+            chat_id=callback.message.chat.id,
+            sticker="CAACAgIAAxkBAAEIu4Jn7l2EQE2ZP8Nq-3-2TkcdqZo6awACsAADVp29CmKInA7P9RvRNAQ"
+        )
+        await callback.message.answer(
+            "🔒 <b>Majburiy obuna kanallari</b> bo‘limi.\n"
+            "➕ Qo‘shish — yangi majburiy kanal qo‘shasiz\n"
+            "❌ O‘chirish — mavjud majburiy kanalni o‘chirasiz\n"
+            "📃 Ro‘yxat — barcha majburiy kanallarni ko‘rasiz",
+            reply_markup=channel_actions_kb("required")
+        )
+
+    await callback.answer()
+
+
+# === Tugma bosilganda ishlaydiganlar ===
+@dp.callback_query(lambda c: c.data.endswith("_add"))
+async def add_channel_handler(callback: types.CallbackQuery):
+    await callback.answer("➕ Kanal qo‘shish funksiyasi hali yozilmagan", show_alert=True)
+
+
+@dp.callback_query(lambda c: c.data.endswith("_delete"))
+async def delete_channel_handler(callback: types.CallbackQuery):
+    await callback.answer("❌ Kanal o‘chirish funksiyasi hali yozilmagan", show_alert=True)
+
+
+@dp.callback_query(lambda c: c.data.endswith("_list"))
+async def list_channel_handler(callback: types.CallbackQuery):
+    if callback.data.startswith("main"):
+        channels = get_main_channels()
+        text = "📢 Asosiy kanallar ro‘yxati:\n"
+        if channels:
+            for ch in channels:
+                text += f"• {ch.channel_id} ({ch.invite_link or 'link yo‘q'})\n"
+        else:
+            text += "🚫 Hali qo‘shilmagan"
+    else:
+        channels = get_required_channels()
+        text = "🔒 Majburiy obuna kanallari ro‘yxati:\n"
+        if channels:
+            for ch in channels:
+                text += f"• {ch.channel_id} ({ch.invite_link or 'link yo‘q'})\n"
+        else:
+            text += "🚫 Hali qo‘shilmagan"
+
+    await callback.message.answer(text)
+    await callback.answer()
+
+
+# === Run bot ===
 async def main():
     await dp.start_polling(bot)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
