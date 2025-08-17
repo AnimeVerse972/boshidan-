@@ -1,16 +1,19 @@
 import asyncio
 import os
-from aiogram import Bot, Dispatcher, types, F
+from aiogram import Bot, Dispatcher, F
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
 from aiogram.filters import Command
 from aiogram.enums import ParseMode
+from aiogram.client.default import DefaultBotProperties   # <-- MUHIM!
 from database import add_channel, delete_channel, get_channels
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-bot = Bot(token=BOT_TOKEN, default=types.DefaultBotProperties(parse_mode=ParseMode.HTML))
+bot = Bot(
+    token=BOT_TOKEN,
+    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+)
 dp = Dispatcher()
-
 
 # 🔹 ADMIN PANEL
 @dp.message(Command("admin"))
