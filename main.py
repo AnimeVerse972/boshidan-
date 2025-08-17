@@ -12,13 +12,38 @@ from database import init_db, add_channel, delete_channel, get_channels
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
+# Admin ID
+ADMINS = [6486825926]   # <-- bu yerga o'zingizning Telegram ID ni yozasiz
+
 bot = Bot(token=BOT_TOKEN, default=types.bot.DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
 
-# === ADMIN PANEL ===
+# === ADMIN TEKSHIRUV DECORATOR ===
+def admin_only(handler):
+    async def wrapper(message: Message, *args, **kwargs):
+        if message.from_user.id not in ADMINS:
+            return
+        return await handler(message, *args, **kwargs)
+    return wrapper
+
+
+# === START ===
 @dp.message(Command("start"))
 async def start_cmd(message: Message):
+    if message.from_user.id in ADMINS:
+        kb = ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text="📡 Kanallar")]],
+            resize_keyboard=True
+        )
+        await message.answer("🔐 Admin panel:", reply_markup=kb)
+    else:
+        await message.answer_sticker("✨")  # oddiy odamga stiker yuboriladi
+
+# === ADMIN PANEL (/admin ham ishlaydi) ===
+@dp.message(Command("admin"))
+@admin_only
+async def admin_cmd(message: Message):
     kb = ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="📡 Kanallar")]],
         resize_keyboard=True
@@ -28,6 +53,7 @@ async def start_cmd(message: Message):
 
 # === KANALLAR MENYU (INLINE) ===
 @dp.message(F.text == "📡 Kanallar")
+@admin_only
 async def channels_menu(message: Message):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📢 Asosiy kanallar", callback_data="main_channels")],
@@ -39,6 +65,8 @@ async def channels_menu(message: Message):
 # === ASOSIY KANALLAR MENYU ===
 @dp.callback_query(F.data == "main_channels")
 async def main_channels(call: CallbackQuery):
+    if call.from_user.id not in ADMINS:
+        return
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ Qo‘shish", callback_data="add_main")],
         [InlineKeyboardButton(text="❌ O‘chirish", callback_data="del_main")],
@@ -51,6 +79,8 @@ async def main_channels(call: CallbackQuery):
 # === MAJBURIY KANALLAR MENYU ===
 @dp.callback_query(F.data == "mandatory_channels")
 async def mandatory_channels(call: CallbackQuery):
+    if call.from_user.id not in ADMINS:
+        return
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ Qo‘shish", callback_data="add_mandatory")],
         [InlineKeyboardButton(text="❌ O‘chirish", callback_data="del_mandatory")],
@@ -63,6 +93,8 @@ async def mandatory_channels(call: CallbackQuery):
 # === KANAL QO‘SHISH ===
 @dp.callback_query(F.data.startswith("add_"))
 async def add_channel_handler(call: CallbackQuery):
+    if call.from_user.id not in ADMINS:
+        return
     channel_type = call.data.replace("add_", "")
     await call.message.answer(
         "🔗 Kanal <b>ID</b> va <b>invite link</b> yuboring:\n"
@@ -73,6 +105,8 @@ async def add_channel_handler(call: CallbackQuery):
 
 @dp.message()
 async def process_channel_data(message: Message):
+    if message.from_user.id not in ADMINS:
+        return
     if message.from_user.id not in dp.workflow_data:
         return
 
@@ -88,6 +122,8 @@ async def process_channel_data(message: Message):
 # === KANALNI O‘CHIRISH ===
 @dp.callback_query(F.data.startswith("del_"))
 async def delete_channel_handler(call: CallbackQuery):
+    if call.from_user.id not in ADMINS:
+        return
     channel_type = call.data.replace("del_", "")
     channels = await get_channels(channel_type)
 
@@ -106,6 +142,8 @@ async def delete_channel_handler(call: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("remove_"))
 async def remove_channel(call: CallbackQuery):
+    if call.from_user.id not in ADMINS:
+        return
     channel_id = int(call.data.replace("remove_", ""))
     await delete_channel(channel_id)
     await call.message.edit_text("✅ Kanal o‘chirildi!")
@@ -114,6 +152,8 @@ async def remove_channel(call: CallbackQuery):
 # === KANALLAR RO‘YXATI ===
 @dp.callback_query(F.data.startswith("list_"))
 async def list_channels(call: CallbackQuery):
+    if call.from_user.id not in ADMINS:
+        return
     channel_type = call.data.replace("list_", "")
     channels = await get_channels(channel_type)
 
