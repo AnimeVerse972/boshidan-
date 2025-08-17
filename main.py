@@ -28,18 +28,61 @@ def admin_only(handler):
     return wrapper
 
 
+# === OBUNA TEKSHIRISH FUNKSIYASI ===
+async def check_subscription(user_id: int) -> bool:
+    channels = await get_channels("mandatory")
+    for ch in channels:
+        try:
+            member = await bot.get_chat_member(ch.channel_id, user_id)
+            if member.status not in ["member", "administrator", "creator"]:
+                return False
+        except TelegramBadRequest:
+            return False
+    return True
+
+
 # === START ===
 @dp.message(Command("start"))
-async def start_cmd(message: Message):
-    if message.from_user.id in ADMINS:
+async def start_cmd(message: types.Message):
+    user_id = message.from_user.id
+
+    if user_id in ADMINS:
         kb = ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text="📡 Kanallar")]],
+            keyboard=[
+                [KeyboardButton(text="📡 Kanallar")]
+            ],
             resize_keyboard=True
         )
         await message.answer("🔐 Admin panel:", reply_markup=kb)
     else:
-        await message.answer_sticker("✨")  # oddiy odamga stiker yuboriladi
+        # obuna tekshir
+        if not await check_subscription(user_id):
+            channels = await get_channels("mandatory")
+            text = "❗️ Botdan foydalanish uchun quyidagi kanallarga obuna bo‘ling:\n\n"
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="➕ Kanalga obuna bo‘lish", url=ch.invite_link)]
+                    for ch in channels
+                ] + [[InlineKeyboardButton(text="✅ Tekshirish", callback_data="check_subs")]]
+            )
+            for ch in channels:
+                text += f"👉 <a href='{ch.invite_link}'>Kanal</a>\n"
+            await message.answer(text, reply_markup=kb)
+            return
 
+        # agar obuna bo‘lsa ✨ yuboriladi
+        await message.answer_sticker("CAACAgUAAxkBAAIBQmSghd0Kk5Ujv3sKkdJkF0n31_Y9AAKkAgACVp29CnxzjW9-1nS6LwQ")  # ✨ stiker ID
+        await message.answer("Xush kelibsiz ✨")
+
+
+# === SUBS TEKSHIRISH CALLBACK ===
+@dp.callback_query(lambda c: c.data == "check_subs")
+async def recheck_subs(call: CallbackQuery):
+    if await check_subscription(call.from_user.id):
+        await call.message.edit_text("✅ Siz barcha kanallarga obuna bo‘ldingiz!")
+        await call.message.answer_sticker("CAACAgUAAxkBAAIBQmSghd0Kk5Ujv3sKkdJkF0n31_Y9AAKkAgACVp29CnxzjW9-1nS6LwQ")
+    else:
+        await call.answer("❌ Hali ham obuna bo‘lmadingiz", show_alert=True)
 # === ADMIN PANEL (/admin ham ishlaydi) ===
 @dp.message(Command("admin"))
 @admin_only
