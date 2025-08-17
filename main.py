@@ -1,141 +1,140 @@
-import asyncio
 import os
-from aiogram import Bot, Dispatcher, F
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
-from aiogram.filters import Command
+import asyncio
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.enums import ParseMode
-from aiogram.client.default import DefaultBotProperties   # <-- MUHIM!
-from database import add_channel, delete_channel, get_channels
+from aiogram.types import (
+    Message, CallbackQuery,
+    ReplyKeyboardMarkup, KeyboardButton,
+    InlineKeyboardMarkup, InlineKeyboardButton
+)
+from aiogram.filters import Command
+from database import init_db, add_channel, delete_channel, get_channels
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-bot = Bot(
-    token=BOT_TOKEN,
-    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-)
+bot = Bot(token=BOT_TOKEN, default=types.bot.DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
-# 🔹 ADMIN PANEL
-@dp.message(Command("admin"))
-async def admin_panel(message: Message):
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📢 Kanallar", callback_data="channels_menu")]
-    ])
-    await message.answer("🔧 Admin panel:", reply_markup=kb)
 
-
-# 🔹 Kanal menyusi
-@dp.callback_query(F.data == "channels_menu")
-async def channels_menu(call: CallbackQuery):
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Asosiy kanallar", callback_data="main_channels")],
-        [InlineKeyboardButton(text="Majburiy obuna kanallari", callback_data="mandatory_channels")],
-        [InlineKeyboardButton(text="◀️ Ortga", callback_data="back_admin")]
-    ])
-    await call.message.edit_text("Qaysi turdagi kanalni tanlaysiz?", reply_markup=kb)
-
-
-# 🔹 Ortga tugma
-@dp.callback_query(F.data == "back_admin")
-async def back_admin(call: CallbackQuery):
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📢 Kanallar", callback_data="channels_menu")]
-    ])
-    await call.message.edit_text("🔧 Admin panel:", reply_markup=kb)
-
-
-# 🔹 Kanal turini tanlash
-@dp.callback_query(F.data.in_(["main_channels", "mandatory_channels"]))
-async def channel_actions(call: CallbackQuery):
-    channel_type = "main" if call.data == "main_channels" else "mandatory"
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➕ Qo‘shish", callback_data=f"add_{channel_type}")],
-        [InlineKeyboardButton(text="❌ O‘chirish", callback_data=f"del_{channel_type}")],
-        [InlineKeyboardButton(text="📋 Ro‘yxat", callback_data=f"list_{channel_type}")],
-        [InlineKeyboardButton(text="◀️ Ortga", callback_data="channels_menu")]
-    ])
-    await call.message.edit_text(
-        f"🔧 {channel_type.capitalize()} kanallar boshqaruvi:", reply_markup=kb
+# === ADMIN PANEL ===
+@dp.message(Command("start"))
+async def start_cmd(message: Message):
+    kb = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="📡 Kanallar")]],
+        resize_keyboard=True
     )
+    await message.answer("🔐 Admin panel:", reply_markup=kb)
 
 
-# 🔹 Kanal qo‘shish
+# === KANALLAR MENYU (INLINE) ===
+@dp.message(F.text == "📡 Kanallar")
+async def channels_menu(message: Message):
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📢 Asosiy kanallar", callback_data="main_channels")],
+        [InlineKeyboardButton(text="✅ Majburiy obuna kanallari", callback_data="mandatory_channels")]
+    ])
+    await message.answer("Qaysi turdagi kanallarni boshqaramiz?", reply_markup=kb)
+
+
+# === ASOSIY KANALLAR MENYU ===
+@dp.callback_query(F.data == "main_channels")
+async def main_channels(call: CallbackQuery):
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Qo‘shish", callback_data="add_main")],
+        [InlineKeyboardButton(text="❌ O‘chirish", callback_data="del_main")],
+        [InlineKeyboardButton(text="📋 Ro‘yxat", callback_data="list_main")],
+        [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="channels_menu")]
+    ])
+    await call.message.edit_text("📢 Asosiy kanallar menyusi", reply_markup=kb)
+
+
+# === MAJBURIY KANALLAR MENYU ===
+@dp.callback_query(F.data == "mandatory_channels")
+async def mandatory_channels(call: CallbackQuery):
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Qo‘shish", callback_data="add_mandatory")],
+        [InlineKeyboardButton(text="❌ O‘chirish", callback_data="del_mandatory")],
+        [InlineKeyboardButton(text="📋 Ro‘yxat", callback_data="list_mandatory")],
+        [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="channels_menu")]
+    ])
+    await call.message.edit_text("✅ Majburiy obuna kanallar menyusi", reply_markup=kb)
+
+
+# === KANAL QO‘SHISH ===
 @dp.callback_query(F.data.startswith("add_"))
-async def add_channel_start(call: CallbackQuery, state=None):
-    channel_type = call.data.split("_")[1]
+async def add_channel_handler(call: CallbackQuery):
+    channel_type = call.data.replace("add_", "")
     await call.message.answer(
-        f"📩 {channel_type.capitalize()} kanal qo‘shish uchun:\n"
-        f"1. Kanal ID (masalan: <code>-1001234567890</code>) yuboring\n"
-        f"2. Invite link (agar mavjud bo‘lsa)"
+        "🔗 Kanal <b>ID</b> va <b>invite link</b> yuboring:\n"
+        "masalan: <code>-1001234567890 https://t.me/xxxxx</code>"
     )
-    # Bu yerda FSM yozish kerak (agar kerak bo‘lsa), hozir qisqartirilgan
+    dp.workflow_data[call.from_user.id] = channel_type
 
 
-# 🔹 Kanal ro‘yxati
-@dp.callback_query(F.data.startswith("list_"))
-async def list_channels(call: CallbackQuery):
-    channel_type = call.data.split("_")[1]
-    channels = get_channels(channel_type)
-    if not channels:
-        await call.message.edit_text("⚠️ Kanallar yo‘q")
+@dp.message()
+async def process_channel_data(message: Message):
+    if message.from_user.id not in dp.workflow_data:
         return
 
-    text = f"📋 {channel_type.capitalize()} kanallar ro‘yxati:\n\n"
+    channel_type = dp.workflow_data.pop(message.from_user.id)
+    try:
+        channel_id, invite_link = message.text.split(" ", 1)
+        await add_channel(channel_type, int(channel_id), invite_link)
+        await message.answer("✅ Kanal muvaffaqiyatli qo‘shildi!")
+    except Exception as e:
+        await message.answer(f"❌ Xato: {e}")
+
+
+# === KANALNI O‘CHIRISH ===
+@dp.callback_query(F.data.startswith("del_"))
+async def delete_channel_handler(call: CallbackQuery):
+    channel_type = call.data.replace("del_", "")
+    channels = await get_channels(channel_type)
+
+    if not channels:
+        await call.message.answer("❌ Hech qanday kanal topilmadi.")
+        return
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=f"{ch.channel_id}", callback_data=f"remove_{ch.channel_id}")]
+            for ch in channels
+        ] + [[InlineKeyboardButton(text="⬅️ Orqaga", callback_data=f"{channel_type}_channels")]]
+    )
+    await call.message.edit_text("O‘chirish uchun kanalni tanlang:", reply_markup=kb)
+
+
+@dp.callback_query(F.data.startswith("remove_"))
+async def remove_channel(call: CallbackQuery):
+    channel_id = int(call.data.replace("remove_", ""))
+    await delete_channel(channel_id)
+    await call.message.edit_text("✅ Kanal o‘chirildi!")
+
+
+# === KANALLAR RO‘YXATI ===
+@dp.callback_query(F.data.startswith("list_"))
+async def list_channels(call: CallbackQuery):
+    channel_type = call.data.replace("list_", "")
+    channels = await get_channels(channel_type)
+
+    if not channels:
+        await call.message.edit_text("📭 Hech qanday kanal yo‘q.")
+        return
+
+    text = "📋 Kanallar ro‘yxati:\n\n"
     for ch in channels:
-        text += f"• ID: <code>{ch.channel_id}</code>\n"
-        if ch.invite_link:
-            text += f"🔗 {ch.invite_link}\n"
-        text += f"(db_id={ch.id})\n\n"
+        text += f"ID: <code>{ch.channel_id}</code>\nLink: {ch.invite_link}\n\n"
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="◀️ Ortga", callback_data=f"{channel_type}_channels")]
+        [InlineKeyboardButton(text="⬅️ Orqaga", callback_data=f"{channel_type}_channels")]
     ])
     await call.message.edit_text(text, reply_markup=kb)
 
 
-# 🔹 Majburiy obuna tekshirish
-async def check_subscriptions(user_id: int):
-    mandatory_channels = get_channels("mandatory")
-    not_joined = []
-
-    for ch in mandatory_channels:
-        try:
-            member = await bot.get_chat_member(ch.channel_id, user_id)
-            if member.status in ["left", "kicked"]:
-                not_joined.append(ch)
-        except Exception:
-            not_joined.append(ch)
-
-    return not_joined
-
-
-@dp.message(Command("start"))
-async def cmd_start(message: Message):
-    not_joined = await check_subscriptions(message.from_user.id)
-
-    if not_joined:
-        kb = InlineKeyboardMarkup()
-        for ch in not_joined:
-            url = ch.invite_link if ch.invite_link else f"https://t.me/{ch.channel_id}"
-            kb.add(InlineKeyboardButton(text="🔗 Kanalga qo‘shilish", url=url))
-        kb.add(InlineKeyboardButton(text="✅ Tekshirish", callback_data="check_subs"))
-        await message.answer("Botdan foydalanish uchun quyidagi kanallarga qo‘shiling:", reply_markup=kb)
-        return
-
-    await message.answer("✨")
-
-
-@dp.callback_query(F.data == "check_subs")
-async def recheck(call: CallbackQuery):
-    not_joined = await check_subscriptions(call.from_user.id)
-    if not_joined:
-        await call.answer("⚠️ Hali ham obuna bo‘lmadingiz", show_alert=True)
-    else:
-        await call.message.edit_text("✅ Obuna tekshirildi! Botdan foydalanishingiz mumkin.")
-
-
-# 🔹 Run bot
+# === STARTUP ===
 async def main():
+    await init_db()
+    print("Bot ishga tushdi 🚀")
     await dp.start_polling(bot)
 
 
