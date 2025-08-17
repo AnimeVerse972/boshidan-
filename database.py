@@ -1,59 +1,52 @@
-import os
-from sqlalchemy import create_engine, Column, Integer, String, DateTime
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy import Column, Integer, String, DateTime, create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 from datetime import datetime
-from dotenv import load_dotenv
+import os
 
-load_dotenv()
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///bot.db")
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-Base = declarative_base()
 engine = create_engine(DATABASE_URL)
-Session = sessionmaker(bind=engine)
-session = Session()
-
-
-# === MODELLAR ===
-class User(Base):
-    __tablename__ = "users"
-    id = Column(Integer, primary_key=True)
-    telegram_id = Column(String, unique=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+Base = declarative_base()
 
 
 class Channel(Base):
     __tablename__ = "channels"
-    id = Column(Integer, primary_key=True)
-    link = Column(String, unique=True)
-    type = Column(String)  # "main" yoki "forced"
+    id = Column(Integer, primary_key=True, index=True)
+    type = Column(String, nullable=False)  # "main" yoki "mandatory"
+    channel_id = Column(String, nullable=False)  # -100xxxx
+    invite_link = Column(String, nullable=True)  # https://t.me/+xxxx
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
-Base.metadata.create_all(engine)
+Base.metadata.create_all(bind=engine)
 
 
-# === FUNKSIYALAR ===
-def add_user(tg_id: str):
-    user = session.query(User).filter_by(telegram_id=tg_id).first()
-    if not user:
-        user = User(telegram_id=tg_id)
-        session.add(user)
-        session.commit()
+def add_channel(channel_type: str, channel_id: str, invite_link: str = None):
+    db = SessionLocal()
+    channel = Channel(type=channel_type, channel_id=channel_id, invite_link=invite_link)
+    db.add(channel)
+    db.commit()
+    db.refresh(channel)
+    db.close()
+    return channel
 
 
-def get_channels(channel_type: str):
-    return session.query(Channel).filter_by(type=channel_type).all()
+def delete_channel(channel_id: int):
+    db = SessionLocal()
+    channel = db.query(Channel).filter(Channel.id == channel_id).first()
+    if channel:
+        db.delete(channel)
+        db.commit()
+    db.close()
 
 
-def add_channel(link: str, channel_type: str):
-    ch = Channel(link=link, type=channel_type)
-    session.add(ch)
-    session.commit()
-
-
-def delete_channel(link: str, channel_type: str):
-    ch = session.query(Channel).filter_by(link=link, type=channel_type).first()
-    if ch:
-        session.delete(ch)
-        session.commit()
+def get_channels(channel_type: str = None):
+    db = SessionLocal()
+    if channel_type:
+        channels = db.query(Channel).filter(Channel.type == channel_type).all()
+    else:
+        channels = db.query(Channel).all()
+    db.close()
+    return channels
