@@ -1,14 +1,13 @@
 import os
-from dotenv import load_dotenv
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean
+from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
 from datetime import datetime
+from dotenv import load_dotenv
 
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# SQLAlchemy sozlash
 Base = declarative_base()
 engine = create_engine(DATABASE_URL)
 Session = sessionmaker(bind=engine)
@@ -23,54 +22,38 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
-# Majburiy obuna kanallari
-class RequiredChannel(Base):
-    __tablename__ = "required_channels"
+class Channel(Base):
+    __tablename__ = "channels"
     id = Column(Integer, primary_key=True)
-    channel_id = Column(String, unique=True)  # @username yoki ID
-    invite_link = Column(String, nullable=True)  # agar private bo‘lsa link
+    link = Column(String, unique=True)
+    type = Column(String)  # "main" yoki "forced"
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
-# Asosiy kanallar (bot xabar yuboradigan)
-class MainChannel(Base):
-    __tablename__ = "main_channels"
-    id = Column(Integer, primary_key=True)
-    channel_id = Column(String, unique=True)  # @username yoki ID
-    invite_link = Column(String, nullable=True)
-
-
-# Jadval yaratish
 Base.metadata.create_all(engine)
 
 
 # === FUNKSIYALAR ===
-def get_user_by_tg_id(tg_id: str):
-    return session.query(User).filter_by(telegram_id=tg_id).first()
-
 def add_user(tg_id: str):
-    user = User(telegram_id=tg_id)
-    session.add(user)
-    session.commit()
-    return user
+    user = session.query(User).filter_by(telegram_id=tg_id).first()
+    if not user:
+        user = User(telegram_id=tg_id)
+        session.add(user)
+        session.commit()
 
 
-# Required channels
-def add_required_channel(channel_id: str, invite_link: str = None):
-    ch = RequiredChannel(channel_id=channel_id, invite_link=invite_link)
+def get_channels(channel_type: str):
+    return session.query(Channel).filter_by(type=channel_type).all()
+
+
+def add_channel(link: str, channel_type: str):
+    ch = Channel(link=link, type=channel_type)
     session.add(ch)
     session.commit()
-    return ch
-
-def get_required_channels():
-    return session.query(RequiredChannel).all()
 
 
-# Main channels
-def add_main_channel(channel_id: str, invite_link: str = None):
-    ch = MainChannel(channel_id=channel_id, invite_link=invite_link)
-    session.add(ch)
-    session.commit()
-    return ch
-
-def get_main_channels():
-    return session.query(MainChannel).all()
+def delete_channel(link: str, channel_type: str):
+    ch = session.query(Channel).filter_by(link=link, type=channel_type).first()
+    if ch:
+        session.delete(ch)
+        session.commit()
